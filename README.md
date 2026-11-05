@@ -396,9 +396,12 @@ additionally governed by the [Gemma Terms of Use](LICENSE_GEMMA.txt); see
 ## Citation
 
 ```bibtex
-@article{roboreel2026,
-  title   = {Monkey See, Can Monkey Do? A Benchmark for Evaluating Robot Skill Learning by Observation},
-  journal = {arXiv preprint arXiv:2609.08209},
-  year    = {2026}
+@inproceedings{roboreel2026,
+  title         = {Monkey See, Can Monkey Do? A Benchmark for Evaluating Robot Skill Learning by Observation},
+  author        = {Gu, Weiwei and Gupta, Anmol and Sah, Anant and Varghese, Ryan and Vanam, Lalitha Shreya and Adireddi, Prabhath and Karkus, Peter and Gopalan, Nakul},
+  booktitle     = {Conference on Robot Learning (CoRL)},
+  year          = {2026},
+  eprint        = {2609.08209},
+  archivePrefix = {arXiv}
 }
 ```

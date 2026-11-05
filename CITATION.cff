@@ -7,6 +7,23 @@ abstract: >-
   rather than on teleoperated robot trajectories, and evaluated in simulation
   across four test suites that vary visual distraction and object pose.
 type: software
+authors:
+  - family-names: "Gu"
+    given-names: "Weiwei"
+  - family-names: "Gupta"
+    given-names: "Anmol"
+  - family-names: "Sah"
+    given-names: "Anant"
+  - family-names: "Varghese"
+    given-names: "Ryan"
+  - family-names: "Vanam"
+    given-names: "Lalitha Shreya"
+  - family-names: "Adireddi"
+    given-names: "Prabhath"
+  - family-names: "Karkus"
+    given-names: "Peter"
+  - family-names: "Gopalan"
+    given-names: "Nakul"
 license: MIT
 repository-code: "https://github.com/weiweigu1998/roboreel_models"
 url: "https://roboreel.github.io"
@@ -17,8 +34,30 @@ keywords:
   - vision-language-action
   - benchmark
 preferred-citation:
-  type: article
+  type: conference-paper
   title: "Monkey See, Can Monkey Do? A Benchmark for Evaluating Robot Skill Learning by Observation"
+  authors:
+    - family-names: "Gu"
+      given-names: "Weiwei"
+    - family-names: "Gupta"
+      given-names: "Anmol"
+    - family-names: "Sah"
+      given-names: "Anant"
+    - family-names: "Varghese"
+      given-names: "Ryan"
+    - family-names: "Vanam"
+      given-names: "Lalitha Shreya"
+    - family-names: "Adireddi"
+      given-names: "Prabhath"
+    - family-names: "Karkus"
+      given-names: "Peter"
+    - family-names: "Gopalan"
+      given-names: "Nakul"
+  collection-title: "Conference on Robot Learning (CoRL)"
+  conference:
+    name: "Conference on Robot Learning (CoRL)"
   year: 2026
-  journal: "arXiv preprint arXiv:2609.08209"
+  identifiers:
+    - type: other
+      value: "arXiv:2609.08209"
   url: "https://arxiv.org/abs/2609.08209"
