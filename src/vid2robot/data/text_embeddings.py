@@ -31,10 +31,7 @@ def build_text_embeddings(tasks: list[str], device: str = "cpu", *,
     (e.g. ``"pick_cube"``), with the curated GT sentence as the input text.
 
     Run once in the main process during dataset ``__init__``; the model is
-    not kept around (we only need the embeddings). When the GT annotation
-    file is missing (e.g. unit-test env without the dataset mounted) we
-    fall back to ``task.replace("_", " ")`` for unknown task keys so legacy
-    setups still produce something the text tower can embed.
+    not kept around (we only need the embeddings).
     """
     import torch
     from transformers import AutoModel, AutoProcessor
@@ -45,7 +42,7 @@ def build_text_embeddings(tasks: list[str], device: str = "cpu", *,
     sentences: list[str] = []
     for t in tasks:
         keys.append(t)
-        sentences.append(gt.get(t, t.replace("_", " ")))
+        sentences.append(gt[t])
 
     proc = AutoProcessor.from_pretrained(model_id)
     model = AutoModel.from_pretrained(model_id).to(device).eval()
