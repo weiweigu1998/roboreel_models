@@ -1,0 +1,17 @@
+{
+  "model": "lerobot_pi05_fft",
+  "checkpoint_dir": "${ROBOREEL_CKPT}/wd/vlm_pi05",
+  "scope": "last20",
+  "max_rollout_steps": 800,
+  "human_demo_and_env_types": [
+    [
+      "without_distraction",
+      "without_distraction"
+    ],
+    [
+      "with_distraction",
+      "with_distraction"
+    ]
+  ],
+  "save_video": false
+}

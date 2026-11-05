@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use RoboReel, please cite the paper below."
+title: "Monkey See, Can Monkey Do? A Benchmark for Evaluating Robot Skill Learning by Observation"
+abstract: >-
+  RoboReel is a benchmark for learning robot manipulation skills from human
+  demonstration video. Policies are conditioned on a human performing a task
+  rather than on teleoperated robot trajectories, and evaluated in simulation
+  across four test suites that vary visual distraction and object pose.
+type: software
+license: MIT
+repository-code: "https://github.com/weiweigu1998/roboreel_models"
+url: "https://roboreel.github.io"
+keywords:
+  - robotics
+  - imitation learning
+  - learning from observation
+  - vision-language-action
+  - benchmark
+preferred-citation:
+  type: article
+  title: "Monkey See, Can Monkey Do? A Benchmark for Evaluating Robot Skill Learning by Observation"
+  year: 2026
+  journal: "arXiv preprint arXiv:2609.08209"
+  url: "https://arxiv.org/abs/2609.08209"

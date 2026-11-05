@@ -1,0 +1,25 @@
+{
+  "model": "uniskill",
+  "policy_checkpoint": "${ROBOREEL_CKPT}/nd/uniskill_policy/ckpt.pth",
+  "idm_checkpoint": "${UNISKILL_ISD}",
+  "skill_dir": "${ROBOREEL_DATA}/uniskill_skills",
+  "uniskill_config": "configs/uniskill.json",
+  "data_dir": "${ROBOREEL_DATA}",
+  "demo_camera": "front",
+  "robot_cameras": [
+    "base_camera"
+  ],
+  "scope": "last20",
+  "max_rollout_steps": 800,
+  "human_demo_and_env_types": [
+    [
+      "without_distraction",
+      "without_distraction"
+    ],
+    [
+      "with_distraction",
+      "with_distraction"
+    ]
+  ],
+  "save_video": false
+}

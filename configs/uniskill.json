@@ -1,0 +1,28 @@
+{
+    "policy": {
+        "idm_num_layers": 8,
+        "idm_num_heads": 4,
+        "idm_hidden_dim": 256,
+        "idm_skill_dim": 64,
+        "idm_out_dim": 768,
+        "idm_resolution": 224,
+        "idm_window_size": 2,
+        "idm_patch_size": 16,
+
+        "depth_model": "depth-anything/Depth-Anything-V2-Small-hf",
+
+        "policy_config_path": null,
+        "ac_dim": 8,
+        "img_size": 128,
+
+        "skill_interval": 1,
+        "skill_batch_size": 64,
+
+        "obs_key_mapping": {
+            "gripper_states": ["agent", "qpos", [7, 9]],
+            "joint_states": ["agent", "qpos", [0, 7]],
+            "agentview_rgb": ["sensor", "base_camera", "Color"],
+            "eye_in_hand_rgb": ["sensor", "hand_camera", "Color"]
+        }
+    }
+}

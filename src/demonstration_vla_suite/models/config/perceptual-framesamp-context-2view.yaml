@@ -1,0 +1,22 @@
+budget: 256
+frame_budget: 8
+num_views: 2
+token_per_image: 16
+streaming_obs_horizon: 16
+pool_type: mean
+use_pos_emb: true
+use_state_emb: false
+demonstration_feature:
+  img:
+    net: identity
+    input_dim: 2048
+  pos:
+    input_dim: 768
+    hidden_dim: 768
+  state:
+    input_dim: 8
+    hidden_dim: 512
+integration_type: context
+demonstration_token_dim: 2048
+representation_type: perceptual
+demonstration_sampling_type: uniform_frame_sampling

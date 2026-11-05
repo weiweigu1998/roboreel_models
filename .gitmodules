@@ -1,0 +1,13 @@
+[submodule "models/UniSkill"]
+	path = src/external_models/UniSkill
+	url = https://github.com/weiweigu1998/UniSkill.git
+[submodule "models/UniSkill-Policy"]
+	path = src/external_models/UniSkill-Policy
+	url = https://github.com/weiweigu1998/UniSkill-Policy.git
+[submodule "src/external_models/lerobot"]
+	path = src/external_models/lerobot
+	url = https://github.com/huggingface/lerobot.git
+[submodule "roboreel_env"]
+	path = roboreel_env
+	url = https://github.com/gupta-anmol99/roboreel.git
+	branch = v1

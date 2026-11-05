@@ -1,0 +1,17 @@
+{
+  "model": "demo_pi05",
+  "checkpoint_dir": "${ROBOREEL_CKPT}/wd/vid_cond_pi05_uniform/ckpt",
+  "scope": "last20",
+  "max_rollout_steps": 800,
+  "human_demo_and_env_types": [
+    [
+      "without_distraction",
+      "without_distraction"
+    ],
+    [
+      "with_distraction",
+      "with_distraction"
+    ]
+  ],
+  "save_video": false
+}
