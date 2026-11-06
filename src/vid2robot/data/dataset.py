@@ -2,7 +2,7 @@
 
 Builds (prompt_video, state_video, robot_full_video, action_bins, text_embed)
 tuples from:
-  * ``raw_video_demonstrations/<type>/<task>/<demo>/front.mp4`` — prompt video
+  * ``human_demos/<split>/<type>/<task>/<demo>/front.mp4`` — prompt video
   * ``postprocessed_robot_trajectories/data/<idx>.pkl``        — robot history
     (uses ``observation/base_camera``) + 4-step future action chunk.
 
@@ -20,8 +20,8 @@ import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset
 
-from lfo_data import (HUMAN_VIDEO_SUBDIR, discover_demos, discover_human_demos,
-                      load_sample)
+from dataset_layout import identify_human_video
+from lfo_data import discover_demos, discover_human_demos, load_sample
 
 from .action_codec import ActionCodec, fit_codec_from_samples
 from .sampling import sample_prompt_indices, sample_state_indices
@@ -190,18 +190,9 @@ class Vid2RobotDataset(Dataset):
 
     # ------------------------------------------------------------------
     def _npy_path_for_mp4(self, mp4: str) -> str:
-        """Map ``raw_video_demonstrations/<type>/<task>/<demo>/<cam>.mp4`` ->
-        ``<data_root>/<prompt_frames_subdir>/<type>/<task>/<demo>/<cam>.npy``.
-
-        Uses the directory structure rather than ``str.replace`` so it stays
-        correct even if the raw root is moved or symlinked.
-        """
-        demo_dir = os.path.dirname(mp4)             # .../<type>/<task>/<demo>
-        task_dir = os.path.dirname(demo_dir)        # .../<type>/<task>
-        type_dir = os.path.dirname(task_dir)        # .../<type>
-        video_type = os.path.basename(type_dir)
-        task = os.path.basename(task_dir)
-        demo = os.path.basename(demo_dir)
+        """Map ``human_demos/<split>/<type>/<task>/<demo>/<cam>.mp4`` ->
+        ``<data_root>/<prompt_frames_subdir>/<type>/<task>/<demo>/<cam>.npy``."""
+        video_type, task, demo = identify_human_video(mp4)
         return os.path.join(self._prompt_frames_root, video_type, task, demo,
                             f"{self.prompt_camera}.npy")
 

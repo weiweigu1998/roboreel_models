@@ -147,7 +147,7 @@ def discover_demos(samples_root: str, task_filter: str | None,
                 continue
             e = json.loads(line)
             bucket = _entry_bucket(e)
-            task = bucket if bucket in _FLAT_OUTPUT_BUCKETS else e["task"]
+            task = e["task"]
             groups[(bucket, task)][e["demo_id"]].append((int(e["t"]), int(e["idx"])))
 
     out: list[tuple[str, str, list[tuple[str, list[int]]]]] = []

@@ -3,14 +3,14 @@ write one bundled file per (demo, camera).
 
 Reads from::
 
-    <data_root>/raw_video_demonstrations/<task>/<demo_id>/<camera>.mp4
+    <data_root>/human_demos/{train,eval}/{no_distraction,with_distraction}/<task>/<demo_id>/<camera>.mp4
 
 Each demo dir contains one mp4 per camera (e.g. ``front.mp4``,
 ``egocentric.mp4``). The frames are decoded with ``imageio``, run through
 SigLIP, pooled at three patch grids (8x8 / 4x4 / 2x2), and the per-(demo,
 camera) embeddings are written as one bundled file at::
 
-    <data_root>/video_demonstration_features/<task>/<demo_id>/<camera>.npy
+    <data_root>/video_demonstration_features/<bucket>/<task>/<demo_id>/<camera>.npy
 
 Each bundled ``.npy`` holds a dict with stacked arrays::
 
@@ -66,30 +66,6 @@ import numpy as np
 #: Cameras emitted by the human-demo capture rig. Override with ``--cameras``.
 #: Each camera ``<cam>`` is read from ``<demo_dir>/<cam>.mp4``.
 DEFAULT_CAMERAS = ("egocentric", "front", "left", "right")
-
-
-def _iter_demo_dirs(video_root: Path, only_task: str | None) -> list[tuple[str, Path]]:
-    """Walk ``raw_video_demonstrations/<task>/<demo>/`` and return ``(task, demo_dir)``."""
-    out: list[tuple[str, Path]] = []
-    for task_dir in sorted(p for p in video_root.iterdir() if p.is_dir()):
-        if only_task is not None and task_dir.name != only_task:
-            continue
-        for demo_dir in sorted(p for p in task_dir.iterdir() if p.is_dir()):
-            out.append((task_dir.name, demo_dir))
-    return out
-
-
-def _iter_demo_dirs_flat(video_root: Path) -> list[tuple[str, Path]]:
-    """Walk ``raw_video_demonstrations/<bucket>/<demo>/`` (no per-task subdir).
-
-    Returns ``("", demo_dir)`` so callers that compose output paths via the
-    task component end up with ``<feat_root>/<demo>/`` (the empty segment
-    collapses cleanly in ``Path`` joins via ``/ "" /``).
-    """
-    out: list[tuple[str, Path]] = []
-    for demo_dir in sorted(p for p in video_root.iterdir() if p.is_dir()):
-        out.append(("", demo_dir))
-    return out
 
 
 def _read_camera_mp4(demo_dir: Path, camera: str) -> np.ndarray | None:
@@ -244,12 +220,13 @@ def main() -> None:
     parser.add_argument(
         "--data-root",
         default=os.environ.get("ROBOREEL_DATA"),
-        help="Root containing ``raw_video_demonstrations/`` (default: ~/data/lfo_benchmark).",
+        help="Dataset root (default: $ROBOREEL_DATA).",
     )
     parser.add_argument(
-        "--input-subdir",
-        default="raw_video_demonstrations",
-        help="Subdir under data-root holding the raw human demos (default: raw_video_demonstrations).",
+        "--video-types",
+        nargs="+",
+        default=["without_distraction", "with_distraction"],
+        help="Distraction buckets to process (default: both).",
     )
     parser.add_argument(
         "--output-subdir",
@@ -260,15 +237,7 @@ def main() -> None:
     parser.add_argument(
         "--task",
         default=None,
-        help="If set, only process this task subdir.",
-    )
-    parser.add_argument(
-        "--no-task-subdir",
-        action="store_true",
-        help="Bucket has no per-task layer; demos sit directly under the bucket "
-             "(e.g. raw_video_demonstrations/<bucket>/<task>/<demo>/<cam>.mp4). "
-             "Output paths drop the task segment too "
-             "(video_demonstration_features/<bucket>/<task>/<demo>/<cam>.npy).",
+        help="If set, only process this task.",
     )
     parser.add_argument(
         "--max-T", type=int, default=1024,
@@ -315,20 +284,18 @@ def main() -> None:
             sys.path.insert(0, sp)
 
     data_root = Path(os.path.expanduser(args.data_root))
-    video_root = data_root / args.input_subdir
     feat_root = data_root / args.output_subdir
-    if not video_root.is_dir():
-        raise FileNotFoundError(f"{video_root} not found")
     feat_root.mkdir(parents=True, exist_ok=True)
 
-    if args.no_task_subdir:
-        if args.task is not None:
-            raise SystemExit("--task can't be combined with --no-task-subdir")
-        demo_dirs = _iter_demo_dirs_flat(video_root)
-    else:
-        demo_dirs = _iter_demo_dirs(video_root, args.task)
+    from dataset_layout import iter_human_demos
+    tasks = [args.task] if args.task else None
+    demo_dirs = [
+        (f"{bucket}/{task}", demo_dir)
+        for bucket in args.video_types
+        for task, _demo_id, demo_dir in iter_human_demos(data_root, bucket, tasks)
+    ]
     if not demo_dirs:
-        raise SystemExit(f"No demo dirs under {video_root}")
+        raise SystemExit(f"No human demos for {args.video_types} under {data_root}/human_demos")
     if args.max_demos is not None:
         demo_dirs = demo_dirs[: args.max_demos]
     if args.num_shards > 1:
@@ -338,7 +305,7 @@ def main() -> None:
         ]
         print(f"[shard {args.shard_id}/{args.num_shards}] {len(demo_dirs)} demos", flush=True)
     else:
-        print(f"Found {len(demo_dirs)} demo dir(s) under {video_root}")
+        print(f"Found {len(demo_dirs)} demo dir(s) under {data_root}/human_demos")
     print(f"Writing token embeddings under {feat_root}", flush=True)
 
     encoder: "_PersistentEncoder | None" = None  # lazy: only built if SigLIP needed
@@ -386,7 +353,7 @@ def main() -> None:
                 continue
             elapsed = time.time() - t0
             print(
-                f"  {demo_dir.relative_to(video_root)} -> {out_dir.relative_to(feat_root)}: "
+                f"  {demo_dir.relative_to(data_root)} -> {out_dir.relative_to(feat_root)}: "
                 f"{', '.join(statuses)} [{elapsed:.1f}s]",
                 flush=True,
             )

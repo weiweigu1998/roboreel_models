@@ -2,7 +2,7 @@
 """Language-annotate every human demonstration trajectory with a VLM.
 
 For each human demonstration video (front camera by default) under
-``raw_video_demonstrations/<video_type>/<task>/<demo>/``, run a vision-language
+``human_demos/{train,eval}/<bucket>/<task>/<demo>/``, run a vision-language
 model and store a short natural-language task *instruction* (an imperative
 command) for the demonstrated task. Robot trajectories are *not* annotated.
 
@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -37,7 +38,9 @@ from decord import VideoReader, cpu
 from PIL import Image
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
-HUMAN_SUBDIR = "raw_video_demonstrations"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from dataset_layout import iter_human_demos  # noqa: E402
+
 
 DEFAULT_PROMPT = (
     "These images are frames sampled in chronological order from a video of a "
@@ -50,7 +53,7 @@ DEFAULT_PROMPT = (
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--data-root", default=os.environ.get("ROBOREEL_DATA"),
-                   help="Dataset root holding raw_video_demonstrations/.")
+                   help="Dataset root (default: $ROBOREEL_DATA).")
     p.add_argument("--model", default="Qwen/Qwen3-VL-4B-Instruct",
                    help="HuggingFace model id of the VLM.")
     p.add_argument("--model-name", default="qwen3-vl-4b",
@@ -78,40 +81,18 @@ def parse_args() -> argparse.Namespace:
                    help="Annotate at most this many demos (for testing).")
     p.add_argument("--save-every", type=int, default=20,
                    help="Flush the JSON every N annotations.")
-    p.add_argument("--no-task-subdir", action="store_true",
-                   help="Bucket has no per-task layer; demos sit directly under "
-                        "the bucket dir (key becomes '<video_type>/<demo>').")
     return p.parse_args()
 
 
-def discover_demos(data_root: str, video_types, camera: str, tasks,
-                   no_task_subdir: bool = False):
-    """Return a sorted list of ``(key, mp4_path)`` for every human demo video.
-
-    With per-task layout (default), ``key`` is ``"<video_type>/<task>/<demo>"``.
-    With ``no_task_subdir`` set, demos sit directly under the bucket and
-    ``key`` is ``"<video_type>/<demo>"``.
-    """
-    root = Path(data_root) / HUMAN_SUBDIR
+def discover_demos(data_root: str, video_types, camera: str, tasks):
+    """Sorted ``(key, mp4_path)`` for every human demo video, where ``key`` is
+    ``"<video_type>/<task>/<demo>"``."""
     out: list[tuple[str, str]] = []
     for video_type in video_types:
-        vt_dir = root / video_type
-        if not vt_dir.is_dir():
-            continue
-        if no_task_subdir:
-            for demo_dir in sorted(p for p in vt_dir.iterdir() if p.is_dir()):
-                mp4 = demo_dir / f"{camera}.mp4"
-                if mp4.is_file():
-                    out.append((f"{video_type}/{demo_dir.name}", str(mp4)))
-            continue
-        for task_dir in sorted(p for p in vt_dir.iterdir() if p.is_dir()):
-            if tasks and task_dir.name not in tasks:
-                continue
-            for demo_dir in sorted(p for p in task_dir.iterdir() if p.is_dir()):
-                mp4 = demo_dir / f"{camera}.mp4"
-                if mp4.is_file():
-                    out.append((f"{video_type}/{task_dir.name}/{demo_dir.name}",
-                                str(mp4)))
+        for task, demo, demo_dir in iter_human_demos(data_root, video_type, tasks):
+            mp4 = demo_dir / f"{camera}.mp4"
+            if mp4.is_file():
+                out.append((f"{video_type}/{task}/{demo}", str(mp4)))
     return out
 
 
@@ -126,8 +107,7 @@ def main() -> None:
         print(f"[annotate] loaded {len(annotations)} existing annotations "
               f"from {out_path}", flush=True)
 
-    demos = discover_demos(args.data_root, args.video_types, args.camera, args.tasks,
-                           no_task_subdir=args.no_task_subdir)
+    demos = discover_demos(args.data_root, args.video_types, args.camera, args.tasks)
     todo = [(k, v) for k, v in demos
             if not (args.skip_existing and k in annotations)]
     if args.limit is not None:

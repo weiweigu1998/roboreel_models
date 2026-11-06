@@ -12,7 +12,7 @@ guaranteed start/end anchors.
 
 Usage:
     python scripts/extract_keyframes.py \\
-        --video $ROBOREEL_DATA/raw_video_demonstrations/without_distraction/pick_cube/0042/front.mp4 \\
+        --video $ROBOREEL_DATA/human_demos/train/no_distraction/pick_cube/0042/front.mp4 \\
         --task pick_cube
 """
 
@@ -26,10 +26,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from loguru import logger
 from keyframes.pipeline import extract_keyframes
+from dataset_layout import identify_human_video
 from lfo_task_descriptions import GT_ANNOTATION_PATH, load_gt_annotations
 
 _DEFAULT_DATA_ROOT = os.environ.get("ROBOREEL_DATA")
-_RAW_VIDEO_SUBDIR = "raw_video_demonstrations"
 _ANNOTATION_SUBDIR = "bpp_keyframe_annotations"
 
 
@@ -47,33 +47,6 @@ def _resolve_task_description(task_arg: str, gt_path: str) -> str:
     if task_arg in gt:
         return gt[task_arg]
     return task_arg
-
-
-def _infer_demo_identity(video_path: Path, data_root: Path
-                         ) -> tuple[str, str | None, str]:
-    """Return ``(bucket, task_or_None, demo_id)`` derived from the video's
-    location under ``<data_root>/raw_video_demonstrations/``.
-
-    Layout:
-        <data_root>/raw_video_demonstrations/<bucket>/<task>/<demo_id>/<camera>.mp4
-    """
-    raw_root = (data_root / _RAW_VIDEO_SUBDIR).resolve()
-    vp = video_path.resolve()
-    try:
-        rel = vp.relative_to(raw_root)
-    except ValueError as e:
-        raise ValueError(
-            f"Cannot infer demo identity: video path {vp} is not under "
-            f"{raw_root}. Pass --bucket/--demo-id/--task-name explicitly, "
-            f"or use --output-path to set the JSON destination by hand."
-        ) from e
-    parts = rel.parts
-    if len(parts) == 4:
-        bucket, task, demo_id, _file = parts
-        return bucket, task, demo_id
-    raise ValueError(
-        f"Cannot infer demo identity from {rel}: expected "
-        f"<bucket>/<task>/<demo>/<camera>.mp4, got parts={parts}.")
 
 
 def _annotation_path(data_root: Path, bucket: str, task: str | None,
@@ -99,7 +72,7 @@ def parse_args():
     p.add_argument("--data-root", default=_DEFAULT_DATA_ROOT,
                    help=f"LfO dataset root (default: {_DEFAULT_DATA_ROOT}).")
     p.add_argument("--gt-annotations", default=GT_ANNOTATION_PATH,
-                   help=f"Path to ground_truth_natural_language_annotation.json "
+                   help=f"Path to the task-sentence JSON "
                         f"(default: {GT_ANNOTATION_PATH}).")
     p.add_argument("--bucket", default=None,
                    help="Override the bucket name (otherwise inferred from --video).")
@@ -130,7 +103,7 @@ def main():
     # Resolve demo identity (bucket, task, demo_id). CLI overrides win.
     inferred: tuple[str, str | None, str] | None = None
     try:
-        inferred = _infer_demo_identity(video_path, data_root)
+        inferred = identify_human_video(video_path)
     except ValueError:
         if not (args.bucket and args.demo_id):
             raise
@@ -141,12 +114,12 @@ def main():
         raise SystemExit(
             "Could not determine (bucket, demo_id) — pass --bucket / --demo-id "
             "(and --task-name for per-task buckets) or place the video under "
-            "<data_root>/raw_video_demonstrations/.")
+            "<data_root>/human_demos/.")
     if not task:
         raise SystemExit(
             f"Bucket {bucket!r} requires a task name "
             f"(pass --task-name or place the video at "
-            f"<data_root>/raw_video_demonstrations/<bucket>/<task>/<demo>/<cam>.mp4).")
+            f"<data_root>/human_demos/<split>/<bucket>/<task>/<demo>/<cam>.mp4).")
 
     task_description = _resolve_task_description(args.task, args.gt_annotations)
 

@@ -100,8 +100,7 @@ Reproduce a reported number from a released checkpoint, without training:
 ```bash
 export ROBOREEL_DATA=/path/to/roboreel ROBOREEL_CKPT=/path/to/ckpt
 
-# 1. human-demo RGB for the evaluation episodes (~11 GB); this also links the
-#    layout the code reads
+# 1. human-demo RGB for the evaluation episodes (~11 GB)
 python scripts/download_dataset.py --subset eval --dest "$ROBOREEL_DATA"
 
 # 2. one policy (~6 GB)
@@ -110,8 +109,11 @@ python scripts/download_checkpoints.py \
 
 # 3. precompute what this runner conditions on — it reads cached features and
 #    keyframe indices, not the mp4s
-python scripts/compute_vision_features_for_demo.py --data-root "$ROBOREEL_DATA"
-python scripts/extract_keyframes.py --video <demo>/front.mp4 --task pick_cube
+python scripts/compute_vision_features_for_demo.py --data-root "$ROBOREEL_DATA" --cameras front
+for video in "$ROBOREEL_DATA"/human_demos/*/*_distraction/*/*/front.mp4; do
+  task=$(basename "$(dirname "$(dirname "$video")")")
+  python scripts/extract_keyframes.py --video "$video" --task "$task"
+done
 
 # 4. evaluate
 python scripts/evaluation.py --config configs/eval/nd/vid_cond_pi05_keyframes.json --gpu 0
@@ -124,7 +126,7 @@ Train the same model from scratch:
 
 ```bash
 python scripts/download_dataset.py --dest "$ROBOREEL_DATA"      # ~104 GB
-python scripts/compute_vision_features_for_demo.py --data-root "$ROBOREEL_DATA"
+python scripts/compute_vision_features_for_demo.py --data-root "$ROBOREEL_DATA" --cameras front
 python scripts/process_training_robot_trajectories.py \
     --data-root "$ROBOREEL_DATA" --model vid_cond_pi05
 python scripts/train_vid_cond_pi05.py \
@@ -189,8 +191,9 @@ python scripts/download_dataset.py --subset full --dry-run
 | `full` | everything, depth included | ~113 GB |
 
 Depth is only needed to work with the raw depth video or camera calibration;
-none of the methods here consume it. The `eval` subset is enough to reproduce
-the reported numbers from released checkpoints.
+none of the methods here consume it. The `eval` subset holds the held-out
+demonstrations evaluation conditions on; evaluating a released checkpoint also
+needs the per-method preprocessing under [Data preparation](#data-preparation).
 
 ### Checkpoints
 
@@ -222,30 +225,29 @@ runners raise `FileNotFoundError` if they are missing.
 | Vid. Cond. π₀.₅ (Keyframes) | the above **+** `bpp_keyframe_annotations/<bucket>/<task>/<demo>.json` | **+** `extract_keyframes.py` |
 | VLM + π₀.₅ | `human_video_annotation_qwen3-vl-4b.json` | `annotate_human_videos.py` |
 | UniSkill | `uniskill_skills/<bucket>/<task>/<demo>/<camera>.npy` | `extract_uniskill_human_skill.py` |
-| Vid2Robot | `raw_video_demonstrations/<bucket>/<task>/<demo>/<camera>.mp4` | — (raw video) |
+| Vid2Robot | `human_demos/eval/<bucket>/<task>/<demo>/<camera>.mp4` | — (raw video) |
 
 Only the **robot-trajectory** steps (`process_training_robot_trajectories.py`,
 `convert_lfo_to_robomimic.py`, `extract_uniskill_robot_skill.py`) are
 training-only. Everything derived from the human demos is needed for both.
 
-**On-disk layout.** The scripts and runners read
-`raw_video_demonstrations/<bucket>/<task>/<demo_id>/<camera>.mp4` and
-`raw_training_trajectories/<bucket>/<task>/<demo_id>/`, with `<bucket>` spelled
-`without_distraction` / `with_distraction`. The HuggingFace dataset publishes
-`human_demos/{train,eval}/{no_distraction,with_distraction}/...` and
-`robot_trajectories/...` instead, so `download_dataset.py` links the two
-together with relative symlinks once the download finishes — nothing is
-copied. Re-run it with `--layout-only` on an existing tree to rebuild the
-links.
+**On-disk layout.** The scripts read the dataset exactly as published:
+`human_demos/{train,eval}/{no_distraction,with_distraction}/<task>/<demo>/` and
+`robot_trajectories/{no_distraction,with_distraction}/<task>/<demo>/`. Derived
+artifacts go in their own directories under `$ROBOREEL_DATA`, using
+`without_distraction` / `with_distraction` as the bucket name.
 
 ### Human demonstrations — needed by all four methods, for training *and* evaluation
 
 ```bash
 # cached demonstration video features (Vid. Cond. π₀.₅, both variants)
-python scripts/compute_vision_features_for_demo.py --data-root "$ROBOREEL_DATA"
+python scripts/compute_vision_features_for_demo.py --data-root "$ROBOREEL_DATA" --cameras front
 
 # keyframe indices (Vid. Cond. π₀.₅ keyframes variant) — needs OPENAI_API_KEY
-python scripts/extract_keyframes.py --video <demo>/front.mp4 --task pick_cube
+for video in "$ROBOREEL_DATA"/human_demos/*/*_distraction/*/*/front.mp4; do
+  task=$(basename "$(dirname "$(dirname "$video")")")
+  python scripts/extract_keyframes.py --video "$video" --task "$task"
+done
 
 # natural-language instructions (VLM + π₀.₅)
 python scripts/annotate_human_videos.py --data-root "$ROBOREEL_DATA"
@@ -259,6 +261,9 @@ python scripts/extract_uniskill_human_skill.py \
 Run the step belonging to each method you intend to use. All four are read at
 **evaluation** time as well — they are not a training-only cost.
 
+If `extract_uniskill_human_skill.py` runs out of GPU memory, lower `--batch-size`.
+A 24 GB GPU ran out at the default of 64; 8 worked.
+
 ### Robot trajectories — training only
 
 ```bash
@@ -269,11 +274,13 @@ python scripts/process_training_robot_trajectories.py --data-root "$ROBOREEL_DAT
 python scripts/extract_uniskill_robot_skill.py \
     --samples-root "$ROBOREEL_DATA/postprocessed_robot_trajectories" \
     --idm-checkpoint "$UNISKILL_ISD" \
-    --skill-dir "$ROBOREEL_DATA/UniSkill_skill_representations" --aug-num 5
+    --skill-dir "$ROBOREEL_DATA/UniSkill_skill_representations/pretrained_robot" \
+    --index-filename full_index.jsonl --aug-num 5
 
 # UniSkill policy inputs: robomimic HDF5, one per task
 python src/external_models/UniSkill-Policy/maniskill/convert_lfo_to_robomimic.py \
-    --data-dir "$ROBOREEL_DATA" --output-dir "$ROBOREEL_DATA/robomimic_hdf5"
+    --data-dir "$ROBOREEL_DATA" --output-dir "$ROBOREEL_DATA/robomimic_hdf5" \
+    --index-filename full_index.jsonl
 
 # optional, Vid2Robot training speed: pre-extract the human prompt videos to
 # per-demo npy bundles so the dataset stops decoding mp4s every __getitem__
@@ -292,13 +299,11 @@ samples. `--model` picks which to produce (repeatable, default all):
 |---|---|---|
 | `vid_cond_pi05` | `meta/index.jsonl` | `LfOVLADataset` |
 | `vlm_pi05` | `meta/index.jsonl` | `train_vlm_pi05.py` |
-| `uniskill` | `meta/index.jsonl` | `extract_uniskill_robot_skill.py` |
+| `uniskill` | `meta/index.jsonl` **+** `meta/full_index.jsonl` | `extract_uniskill_robot_skill.py`, `convert_lfo_to_robomimic.py` |
 | `vid2robot` | the above **+** `meta/{full,vid2robot}_index.jsonl` | `src/vid2robot/data/dataset.py` |
 
-Vid2Robot samples shorter action chunks than π₀.₅, so it can use timesteps the
-π₀.₅ action horizon trims off each demo's tail. Selecting it (or `all`) runs
-that extra pass automatically, rather than letting training fail later on a
-missing `vid2robot_index.jsonl`.
+Vid2Robot and UniSkill use timesteps the π₀.₅ action horizon trims off each
+demo's tail. Selecting either (or `all`) runs that extra pass automatically.
 
 `extract_uniskill_robot_skill.py` must run **after**
 `process_training_robot_trajectories.py`: it reads

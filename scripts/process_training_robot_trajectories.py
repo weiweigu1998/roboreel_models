@@ -4,7 +4,7 @@ Pi0.5 training.
 The robot trajectories collected with ``obs_mode="state"`` store cameras as
 sibling mp4 files and a flat ``traj_0/obs`` tensor with no ``agent/qpos`` or
 ``sensor_data`` subgroup. This script reads each demo from
-``raw_training_trajectories/`` and emits one pickle per (task, demo,
+``robot_trajectories/`` and emits one pickle per (task, demo,
 timestep) into ``postprocessed_robot_trajectories/data/<idx>.pkl`` plus a ``postprocessed_robot_trajectories/meta/``
 directory holding ``stats.json`` and ``index.jsonl``. ``LfOVLADataset``
 reads this format with one pickle load per sample — no h5 decompression at
@@ -23,15 +23,15 @@ Method                       Index it reads
 ===========================  ===============================================
 Vid. Cond. pi0.5             ``meta/index.jsonl``
 VLM + pi0.5                  ``meta/index.jsonl``
-UniSkill (robot skills)      ``meta/index.jsonl`` (or ``full_index.jsonl``
-                             to align with the robomimic HDF5s)
+UniSkill (robot skills)      ``meta/full_index.jsonl``
 Vid2Robot                    ``meta/vid2robot_index.jsonl``
 ===========================  ===============================================
 
-``--model`` selects which of those to produce. ``vid2robot`` needs a second
-pass over the trimmed tail (what ``--extend-only`` does), so selecting it runs
-that pass automatically rather than leaving training to fail later on a
-missing ``vid2robot_index.jsonl``.
+``--model`` selects which of those to produce. ``vid2robot`` and ``uniskill``
+need a second pass over the trimmed tail (what ``--extend-only`` does), so
+selecting either runs that pass automatically: Vid2Robot trains from
+``vid2robot_index.jsonl``, and UniSkill's robomimic HDF5s and robot skills are
+built from ``full_index.jsonl``.
 
 CLI::
 
@@ -64,6 +64,9 @@ import h5py
 import imageio.v2 as imageio
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from dataset_layout import robot_trajectories_root  # noqa: E402
+
 logger = logging.getLogger("process_training_robot_trajectories")
 
 #: ManiSkill articulation state layout: ``[root_pose(7), root_lin_vel(3), root_ang_vel(3), qpos(N), qvel(N)]``.
@@ -84,8 +87,8 @@ _CAMERA_MP4_RE = re.compile(r"^(?!0\.mp4$)(?P<cam>[A-Za-z0-9_]+)\.mp4$")
 _BUCKET_ORDER = ("without_distraction", "with_distraction")
 
 
-def _iter_traj_dirs(training_root: Path, only_task: str | None) -> list[tuple[str, str, Path]]:
-    """Walk ``raw_training_trajectories/<bucket>/.../<demo>/`` in deterministic
+def _iter_traj_dirs(data_root: Path, only_task: str | None) -> list[tuple[str, str, Path]]:
+    """Walk ``robot_trajectories/<bucket>/<task>/<demo>/`` in deterministic
     order and return ``(bucket, task, demo_dir)`` tuples.
 
     The layout is ``<bucket>/<task>/<demo>/`` and ``task`` is the task-dir
@@ -96,7 +99,7 @@ def _iter_traj_dirs(training_root: Path, only_task: str | None) -> list[tuple[st
     """
     out: list[tuple[str, str, Path]] = []
     for bucket in _BUCKET_ORDER:
-        bucket_dir = training_root / bucket
+        bucket_dir = robot_trajectories_root(data_root, bucket)
         if not bucket_dir.is_dir():
             continue
         for task_dir in sorted(p for p in bucket_dir.iterdir() if p.is_dir()):
@@ -130,7 +133,7 @@ def _read_mp4(mp4_path: Path) -> np.ndarray:
 ## with all RGB frames packed inside) was removed when the per-sample pkl
 ## path became the canonical input format for Pi0.5 / UniSkill
 ## training. Callers that depended on the legacy h5 layout should either
-## (a) re-extract from the existing ``raw_training_trajectories/`` mp4 +
+## (a) re-extract from the existing ``robot_trajectories/`` mp4 +
 ## state-mode h5 files using an earlier revision of this script, or
 ## (b) be migrated to read from ``postprocessed_robot_trajectories/`` instead.
 
@@ -332,7 +335,7 @@ def _extend_main(args: argparse.Namespace) -> None:
     pi05_root = data_root / args.postprocessed_robot_trajectories_subdir
     pi05_data_root = pi05_root / "data"
     pi05_meta_root = pi05_root / "meta"
-    src_root = data_root / args.input_subdir
+    src_root = data_root
 
     # Read existing meta/index.jsonl into per-demo timestep + global-idx info.
     existing_path = pi05_meta_root / "index.jsonl"
@@ -443,11 +446,6 @@ def main() -> None:
     parser.add_argument("--data-root", default=os.environ.get("ROBOREEL_DATA"),
                         help="Dataset root (default: $ROBOREEL_DATA).")
     parser.add_argument(
-        "--input-subdir",
-        default="raw_training_trajectories",
-        help="Subdir under data-root holding the raw state-mode trajectories.",
-    )
-    parser.add_argument(
         "--model", action="append",
         choices=["all", "vid_cond_pi05", "vlm_pi05", "uniskill", "vid2robot"],
         help="Which method(s) to produce index files for; repeatable "
@@ -517,20 +515,18 @@ def main() -> None:
     if "all" in models:
         models = ["vid_cond_pi05", "vlm_pi05", "uniskill", "vid2robot"]
     # Every method reads the shared pkls + meta/index.jsonl that the base pass
-    # writes; only vid2robot needs the extra tail pass on top of it.
-    need_extend = "vid2robot" in models
+    # writes; vid2robot and uniskill also need the tail pass on top of it.
+    need_extend = "vid2robot" in models or "uniskill" in models
 
     if args.extend_only:
         _extend_main(args)
         return
 
     logger.info("processing for model(s): %s%s", ", ".join(models),
-                " (vid2robot index pass included)" if need_extend else "")
+                " (tail index pass included)" if need_extend else "")
 
     data_root = Path(os.path.expanduser(args.data_root))
-    src_root = data_root / args.input_subdir
-    if not src_root.is_dir():
-        raise FileNotFoundError(f"{src_root} not found")
+    src_root = data_root
 
     pi05_root = data_root / args.postprocessed_robot_trajectories_subdir
     pi05_data_root = pi05_root / "data"
@@ -538,7 +534,7 @@ def main() -> None:
 
     traj_dirs = _iter_traj_dirs(src_root, args.task)
     if not traj_dirs:
-        raise SystemExit(f"No trajectory dirs under {src_root}")
+        raise SystemExit(f"No trajectory dirs under {src_root}/robot_trajectories")
     if args.max_demos is not None:
         traj_dirs = traj_dirs[: args.max_demos]
     logger.info("Found %d trajectory dir(s) under %s", len(traj_dirs), src_root)
@@ -611,10 +607,10 @@ def main() -> None:
         logger.info("pi05 meta written: %d total samples, %d tasks", stats["total_samples"], len(stats["tasks"]))
 
     if need_extend:
-        # Vid2Robot samples shorter action chunks, so it can use timesteps the
-        # pi05 horizon trimmed off the tail of each demo. Append those pkls and
+        # Vid2Robot and UniSkill use timesteps the pi05 horizon trimmed off the
+        # tail of each demo. Append those pkls and
         # write the per-method index files; meta/index.jsonl is left untouched.
-        logger.info("running the vid2robot index pass")
+        logger.info("running the tail index pass")
         _extend_main(args)
 
 

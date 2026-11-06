@@ -10,7 +10,7 @@ Layout assumed:
   ``<samples_root>/meta/<index>.jsonl`` listing valid ``(task, demo_id, t, idx)``
   start timesteps. Each model family gets its own index file because the set of
   valid start timesteps depends on the action horizon; the pkls are shared.
-* human demo videos — ``<data_root>/raw_video_demonstrations/<bucket>/<task>/<demo>/front.mp4``
+* human demo videos — ``<data_root>/human_demos/<split>/<bucket>/<task>/<demo>/front.mp4``
 """
 
 from __future__ import annotations
@@ -29,9 +29,8 @@ from PIL import Image
 import sys as _sys
 _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import np2_pickle_compat  # noqa: F401,E402
+from dataset_layout import iter_human_demos  # noqa: E402
 
-#: Human demonstration videos: ``raw_video_demonstrations/<bucket>/<task>/<demo>/<cam>.mp4``.
-HUMAN_VIDEO_SUBDIR = "raw_video_demonstrations"
 #: Distraction buckets a config may draw human demo videos from.
 VIDEO_TYPE_DIRS = ("without_distraction", "with_distraction")
 #: Default frames sampled per demonstration video. Callers that need a
@@ -107,25 +106,16 @@ def discover_human_demos(data_root: str, tasks: list[str] | None = None,
     out: dict[str, dict[str, dict[str, str]]] = defaultdict(
         lambda: defaultdict(dict))
     for video_type in include_video_types:
-        type_root = os.path.join(data_root, HUMAN_VIDEO_SUBDIR, video_type)
-        if not os.path.isdir(type_root):
-            continue
-        for task in sorted(os.listdir(type_root)):
-            if tasks is not None and task not in tasks:
+        for task, demo, demo_dir in iter_human_demos(data_root, video_type, tasks):
+            try:
+                demo_id = int(demo, 10)
+            except ValueError:
                 continue
-            task_dir = os.path.join(type_root, task)
-            if not os.path.isdir(task_dir):
+            if max_demo_index is not None and demo_id > max_demo_index:
                 continue
-            for demo in sorted(os.listdir(task_dir)):
-                try:
-                    demo_id = int(demo, 10)
-                except ValueError:
-                    continue
-                if max_demo_index is not None and demo_id > max_demo_index:
-                    continue
-                mp4 = os.path.join(task_dir, demo, "front.mp4")
-                if os.path.isfile(mp4):
-                    out[video_type][task][demo] = mp4
+            mp4 = demo_dir / "front.mp4"
+            if mp4.is_file():
+                out[video_type][task][demo] = str(mp4)
     # Materialize the nested defaultdicts so downstream isinstance checks
     # don't trip over them.
     return {b: {t: dict(d) for t, d in by_task.items()} for b, by_task in out.items()}

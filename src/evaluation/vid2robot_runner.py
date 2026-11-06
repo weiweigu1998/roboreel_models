@@ -38,7 +38,8 @@ for _p in (str(_REPO / "src"),):
 # been written under numpy 2.x). See src/np2_pickle_compat.py.
 import np2_pickle_compat  # noqa: F401,E402
 
-from lfo_data import HUMAN_VIDEO_SUBDIR, load_video_frames  # noqa: E402
+from dataset_layout import human_demo_dir  # noqa: E402
+from lfo_data import load_video_frames  # noqa: E402
 from evaluation.utils import _success_from_info, load_train_config  # noqa: E402
 
 # ``_extract_rgb_uint8_hwc`` lives in ``demonstration_vla_suite.shared.maniskill_io``,
@@ -142,9 +143,8 @@ class Vid2RobotRunner:
         (uniformly spaced) so eval is deterministic per (task, demo_id).
         """
         torch = self._torch
-        mp4 = (Path(self.data_dir) / HUMAN_VIDEO_SUBDIR
-               / _DISTRACT_DIRS[bool(demo_distract)] / task
-               / f"{int(demo_id):04d}" / f"{self.prompt_camera}.mp4")
+        mp4 = (human_demo_dir(self.data_dir, _DISTRACT_DIRS[bool(demo_distract)], task, demo_id)
+               / f"{self.prompt_camera}.mp4")
         if not mp4.is_file():
             raise FileNotFoundError(f"Vid2Robot prompt video not found: {mp4}")
         # ``load_video_frames`` with rng=None returns 16 uniformly-spaced frames,

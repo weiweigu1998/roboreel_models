@@ -284,14 +284,16 @@ python scripts/process_training_robot_trajectories.py --data-root "$ROBOREEL_DAT
 # Phase 1 — convert LfO trajectories to robomimic-format HDF5 (one per task).
 python src/external_models/UniSkill-Policy/maniskill/convert_lfo_to_robomimic.py \
     --data-dir "$ROBOREEL_DATA" \
-    --output-dir "$ROBOREEL_DATA/robomimic_hdf5"
+    --output-dir "$ROBOREEL_DATA/robomimic_hdf5" \
+    --index-filename full_index.jsonl
 
 # Phase 2 — extract skill latents with the off-the-shelf ISD.
 #   robot trajectories (policy training input)
 python scripts/extract_uniskill_robot_skill.py \
     --samples-root "$ROBOREEL_DATA/postprocessed_robot_trajectories" \
     --idm-checkpoint "$UNISKILL_ISD" \
-    --skill-dir "$ROBOREEL_DATA/UniSkill_skill_representations" \
+    --skill-dir "$ROBOREEL_DATA/UniSkill_skill_representations/pretrained_robot" \
+    --index-filename full_index.jsonl \
     --aug-num 5
 #   human demonstration videos (what evaluation conditions on)
 python scripts/extract_uniskill_human_skill.py \

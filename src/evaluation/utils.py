@@ -7,7 +7,7 @@ eval_loop,eval_protocol}``.
 Data layout (under ``data_dir``)::
 
     video_demonstration_features/<with_distraction|without_distraction>/<task>/<0000-0099>/token_emb_<t>_<camera>.npy
-    raw_video_demonstrations/<with_distraction|without_distraction>/<task>/<0000-0099>/<camera>.mp4
+    human_demos/{train,eval}/{with_distraction,no_distraction}/<task>/<0000-0099>/<camera>.mp4
 
 A *complete* evaluation iterates the 2×2 grid {human-demo distractor variant} ×
 {task-env distractor} over a demo scope (``full`` = demos 0000-0099, ``last20`` =
@@ -58,12 +58,11 @@ EVAL_DEMO_SCOPES: dict[str, range] = {
     "one":    range(0, 1),
 }
 
-#: Demo IDs for the demo_distract=True (with-distraction) cells. The protocol's
-#: ``last20`` with-distraction slice is a fresh held-out set, 0100-0119 — not
-#: the 0080-0099 used for the no-distraction cells. Other scopes are unchanged.
+#: Demo IDs for the demo_distract=True (with-distraction) cells. ``last20`` is
+#: 0080-0099, the dataset's published ``human_demos/eval/with_distraction`` split.
 EVAL_DEMO_SCOPES_DISTRACT: dict[str, range] = {
     "full":   range(0, 100),
-    "last20": range(100, 120),
+    "last20": range(80, 100),
     "one":    range(0, 1),
 }
 
@@ -127,17 +126,6 @@ def demo_feature_dir(data_dir: str | Path, demo_distract: bool, task: str, demo_
     return (
         Path(data_dir)
         / "video_demonstration_features"
-        / DEMO_DISTRACTION_DIRS[bool(demo_distract)]
-        / task
-        / f"{int(demo_id):04d}"
-    )
-
-
-def demo_video_dir(data_dir: str | Path, demo_distract: bool, task: str, demo_id: int) -> Path:
-    """Directory holding the raw ``<camera>.mp4`` files for one human demo."""
-    return (
-        Path(data_dir)
-        / "raw_video_demonstrations"
         / DEMO_DISTRACTION_DIRS[bool(demo_distract)]
         / task
         / f"{int(demo_id):04d}"
@@ -240,7 +228,7 @@ class EvalConfig:
     """
 
     model: str                              # "demo_pi05" | "uniskill" | "lerobot_pi05_fft" | "vid2robot"
-    scope: str = "full"                     # "full" (0000-0099) | "last20" (off=0080-0099 / on=0100-0119)
+    scope: str = "full"                     # "full" (0000-0099) | "last20" (0080-0099)
     seed_offset_base: int = 0               # added to the env reset seed; run a 3-pass eval as 3 invocations with offsets 0/100000/200000 (evaluate.sh)
     save_video: bool = False
     max_rollout_steps: int | None = None    # optional override; default = env's max_episode_steps
@@ -379,9 +367,8 @@ def run_eval_protocol(eval_cfg: EvalConfig, runner) -> dict:
         tasks = list(runner.tasks)
     if not tasks:
         raise ValueError("tasks list is empty — nothing to evaluate.")
-    # Demo slice differs by the demo_distract axis: no-distraction cells use the
-    # scope's range (last20 -> 0080-0099); with-distraction cells use a separate
-    # held-out slice (last20 -> 0100-0119). Env reset seed follows demo_id.
+    # Each demo_distract value has its own scope table; both resolve last20 to
+    # 0080-0099, read from that bucket's eval split. Env reset seed follows demo_id.
     demo_ids_clean = demo_ids_for_scope(eval_cfg.scope, demo_distract=False)
     demo_ids_distract = demo_ids_for_scope(eval_cfg.scope, demo_distract=True)
     chunk_size = int(eval_cfg.chunk_size or runner.action_horizon)

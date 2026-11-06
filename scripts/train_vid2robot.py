@@ -6,7 +6,7 @@ two LfO adaptations:
   * action head -> 8-D ``pd_joint_pos`` (7 arm joints + 1 gripper close in
     [-1, 1]), chunk_size = 4, 256 bins per dim (paper's 11-D Google-Robot
     space doesn't apply here since the LfO env is base-static).
-  * prompt videos come from ``raw_video_demonstrations/<type>/<task>/<demo>/
+  * prompt videos come from ``human_demos/<split>/<type>/<task>/<demo>/
     front.mp4`` and the robot history from ``observation/base_camera``,
 
 Losses (all averaged): action CE, TCC, prompt-robot SigLIP, video-text SigLIP

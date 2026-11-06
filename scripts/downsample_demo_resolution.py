@@ -12,7 +12,7 @@ single ``(T, S, S, 3) uint8`` array. Temporal sampling (the paper's 16-frame
 first/last/sorted-middle sampler) stays at the dataset layer so frame indices
 re-randomize each ``__getitem__``.
 
-Output layout — kept separate from the read-only ``raw_video_demonstrations``
+Output layout — kept separate from the read-only ``human_demos``
 tree so extracted bundles can be deleted/rebuilt independently::
 
     <data_root>/downsampled_demonstration_videos/<video_type>/<task>/<trajectory_idx>/<camera>.npy
@@ -37,17 +37,16 @@ for p in (REPO, REPO / "src"):
     if sp not in sys.path:
         sys.path.insert(0, sp)
 
-from lfo_data import HUMAN_VIDEO_SUBDIR  # noqa: E402
+from dataset_layout import iter_human_demos  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Pre-extract mp4 frames to npy bundles.")
     p.add_argument("--data-root", required=True,
-                   help="LfO data root (contains raw_video_demonstrations/).")
+                   help="Dataset root (contains human_demos/).")
     p.add_argument("--out-subdir", default="downsampled_demonstration_videos",
                    help="Output root, relative to --data-root. "
-                        "Default mirrors the raw_video_demonstrations/ layout under "
-                        "downsampled_demonstration_videos/<type>/<task>/<demo>/<cam>.npy.")
+                        "Written as downsampled_demonstration_videos/<type>/<task>/<demo>/<cam>.npy.")
     p.add_argument("--image-size", type=int, default=224,
                    help="Spatial resize target (S). Output shape is "
                         "(T, S, S, 3) uint8. Default 224 matches Vid2RobotConfig.")
@@ -60,9 +59,6 @@ def parse_args() -> argparse.Namespace:
                    help="Distraction buckets to walk.")
     p.add_argument("--overwrite", action="store_true",
                    help="Re-extract even if the .npy already exists.")
-    p.add_argument("--no-task-subdir", action="store_true",
-                   help="Bucket has no per-task layer; demos sit directly under "
-                        "the bucket. Output drops the task segment.")
     return p.parse_args()
 
 
@@ -90,48 +86,32 @@ def extract_one(mp4: Path, out: Path, image_size: int) -> tuple[int, int]:
 def main() -> None:
     args = parse_args()
     data_root = Path(args.data_root)
-    in_root = data_root / HUMAN_VIDEO_SUBDIR
-    if not in_root.is_dir():
-        raise SystemExit(f"missing {in_root}")
+    if not (data_root / "human_demos").is_dir():
+        raise SystemExit(f"missing {data_root / 'human_demos'}")
     out_root = data_root / args.out_subdir
 
     npy_name = f"{args.camera}.npy"
     mp4_name = f"{args.camera}.mp4"
     total_mp4s = total_kept = total_written = total_bytes = 0
     for video_type in args.video_types:
-        type_in = in_root / video_type
-        if not type_in.is_dir():
-            continue
-        # Flat-bucket mode: demos sit directly under the bucket dir, with no
-        # per-task layer. Synthesise an empty "task" name so the output path
-        # collapses to <bucket>/<demo>/<cam>.npy.
-        if args.no_task_subdir:
-            task_iter = [("", type_in)]
-        else:
-            task_iter = [(p.name, p) for p in sorted(type_in.iterdir()) if p.is_dir()]
-        for task_name, task_dir in task_iter:
-            if args.tasks is not None and task_name not in args.tasks:
+        for task_name, _demo, demo_dir in iter_human_demos(data_root, video_type, args.tasks):
+            mp4 = demo_dir / mp4_name
+            if not mp4.is_file():
                 continue
-            for demo_dir in sorted(task_dir.iterdir()):
-                if not demo_dir.is_dir():
-                    continue
-                mp4 = demo_dir / mp4_name
-                if not mp4.is_file():
-                    continue
-                total_mp4s += 1
-                out_dir = out_root / video_type / task_name / demo_dir.name
-                out = out_dir / npy_name
-                if out.is_file() and not args.overwrite:
-                    total_kept += 1
-                    continue
-                out_dir.mkdir(parents=True, exist_ok=True)
-                t, nbytes = extract_one(mp4, out, args.image_size)
-                total_written += 1
-                total_bytes += nbytes
-                if total_written % 50 == 0:
-                    print(f"[extract] wrote {total_written} npys "
-                          f"(latest {out.relative_to(out_root)} | {t} frames, "
-                          f"{nbytes/1e6:.1f} MB)", flush=True)
+            total_mp4s += 1
+            out_dir = out_root / video_type / task_name / demo_dir.name
+            out = out_dir / npy_name
+            if out.is_file() and not args.overwrite:
+                total_kept += 1
+                continue
+            out_dir.mkdir(parents=True, exist_ok=True)
+            t, nbytes = extract_one(mp4, out, args.image_size)
+            total_written += 1
+            total_bytes += nbytes
+            if total_written % 50 == 0:
+                print(f"[extract] wrote {total_written} npys "
+                      f"(latest {out.relative_to(out_root)} | {t} frames, "
+                      f"{nbytes/1e6:.1f} MB)", flush=True)
     print(f"[extract] done. mp4s={total_mp4s}  kept(existing)={total_kept}  "
           f"written={total_written}  size={total_bytes/1e9:.2f} GB  "
           f"out_root={out_root}", flush=True)

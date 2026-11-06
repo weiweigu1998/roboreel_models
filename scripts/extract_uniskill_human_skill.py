@@ -4,7 +4,7 @@
 Refers to ``UniSkill/extract_skill.py`` (which works on LIBERO ``.pkl`` files)
 and adapts the same IDM/Depth-Anything pipeline to walk our human demo mp4s:
 
-    <data-root>/raw_video_demonstrations/<distract>/<task>/<demo>/<camera>.mp4
+    <data-root>/human_demos/{train,eval}/<bucket>/<task>/<demo>/<camera>.mp4
 
 For each video, runs the IDM on consecutive ``(t, t + skill_interval)`` frame
 pairs and writes the per-pair skill sequence to:
@@ -24,7 +24,7 @@ Usage:
         [--data-root $ROBOREEL_DATA] \\
         [--tasks pick_cube empty_basket] \\
         [--cameras front egocentric] \\
-        [--human-distract] \\
+        [--video-types without_distraction with_distraction] \\
         [--skill-interval 20] [--batch-size 64] [--amp] [--overwrite] [--progress]
 """
 
@@ -46,7 +46,9 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _UNISKILL_ROOT = _PROJECT_ROOT / "src" / "external_models" / "UniSkill"
 if str(_UNISKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(_UNISKILL_ROOT))
+sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
+from dataset_layout import iter_human_demos  # noqa: E402
 from extract_skill import (  # noqa: E402  -- import after sys.path mutation
     extract_latents_for_demo,
     load_depth_estimator,
@@ -54,8 +56,6 @@ from extract_skill import (  # noqa: E402  -- import after sys.path mutation
 )
 
 #: Sub-directory layout under ``--data-root``.
-RAW_VIDEO_SUBDIR = "raw_video_demonstrations"
-DISTRACT_DIRS = {True: "with_distraction", False: "without_distraction"}
 
 #: Human demo camera. The LfO benchmark conditions on the front view only.
 DEFAULT_CAMERAS = ("front",)
@@ -69,7 +69,7 @@ def parse_args() -> argparse.Namespace:
         "--data-root",
         type=Path,
         default=(Path(os.environ["ROBOREEL_DATA"]) if os.environ.get("ROBOREEL_DATA") else None),
-        help="LfO benchmark root containing raw_video_demonstrations/.",
+        help="Dataset root (default: $ROBOREEL_DATA).",
     )
     p.add_argument(
         "--output-root",
@@ -78,29 +78,17 @@ def parse_args() -> argparse.Namespace:
         help="Directory to write per-(task, demo, camera) skill .npy files into.",
     )
     p.add_argument(
-        "--human-distract",
-        action="store_true",
-        help="Read from with_distraction/ (default: without_distraction/).",
-    )
-    p.add_argument(
-        "--video-type",
-        default=None,
-        help="Custom bucket name under raw_video_demonstrations/. "
-             "Overrides --human-distract when set.",
-    )
-    p.add_argument(
-        "--no-task-subdir",
-        action="store_true",
-        help="Bucket has no per-task layer; demos sit directly under the bucket. "
-             "Output drops the task segment too "
-             "(output-root/<video-type>/<demo>/<camera>.npy).",
+        "--video-types",
+        nargs="+",
+        default=["without_distraction", "with_distraction"],
+        help="Distraction buckets to process (default: both).",
     )
     p.add_argument(
         "--tasks",
         nargs="+",
         default=None,
         help="Optional task name filter (e.g. --tasks pick_cube empty_basket). "
-             "Default: all tasks present under raw_video_demonstrations/<distract>/.",
+             "Default: all tasks present.",
     )
     p.add_argument(
         "--cameras",
@@ -184,46 +172,20 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def _resolve_video_type(human_distract: bool, video_type: str | None) -> str:
-    """``--video-type`` overrides ``--human-distract`` when both supplied."""
-    if video_type:
-        return video_type
-    return DISTRACT_DIRS[bool(human_distract)]
-
-
 def _iter_demo_videos(
     data_root: Path,
-    video_type: str,
+    video_types: List[str],
     task_filter: List[str] | None,
     cameras: List[str],
-    no_task_subdir: bool = False,
-) -> List[tuple[str, str, str, Path]]:
-    """Return ``[(task, demo, camera, mp4_path), ...]`` in sorted order.
-
-    With ``no_task_subdir`` the bucket has no per-task layer; demos sit
-    directly under it and the returned ``task`` segment is ``""`` so output
-    paths composed as ``output_root / video_type / task / demo`` collapse
-    cleanly to ``output_root / video_type / demo``.
-    """
-    root = data_root / RAW_VIDEO_SUBDIR / video_type
-    if not root.is_dir():
-        raise FileNotFoundError(f"{root} not found")
-    out: List[tuple[str, str, str, Path]] = []
-    if no_task_subdir:
-        for demo_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+) -> List[tuple[str, str, str, str, Path]]:
+    """Return ``[(bucket, task, demo, camera, mp4_path), ...]`` in sorted order."""
+    out: List[tuple[str, str, str, str, Path]] = []
+    for bucket in video_types:
+        for task, demo, demo_dir in iter_human_demos(data_root, bucket, task_filter):
             for cam in cameras:
                 mp4 = demo_dir / f"{cam}.mp4"
                 if mp4.is_file():
-                    out.append(("", demo_dir.name, cam, mp4))
-        return out
-    for task_dir in sorted(p for p in root.iterdir() if p.is_dir()):
-        if task_filter is not None and task_dir.name not in task_filter:
-            continue
-        for demo_dir in sorted(p for p in task_dir.iterdir() if p.is_dir()):
-            for cam in cameras:
-                mp4 = demo_dir / f"{cam}.mp4"
-                if mp4.is_file():
-                    out.append((task_dir.name, demo_dir.name, cam, mp4))
+                    out.append((bucket, task, demo, cam, mp4))
     return out
 
 
@@ -250,13 +212,10 @@ def main() -> None:
         torch.backends.cudnn.benchmark = True
 
     args.output_root.mkdir(parents=True, exist_ok=True)
-    distract_dir = _resolve_video_type(args.human_distract, args.video_type)
-
-    units = _iter_demo_videos(args.data_root, distract_dir, args.tasks, args.cameras,
-                              no_task_subdir=args.no_task_subdir)
+    units = _iter_demo_videos(args.data_root, args.video_types, args.tasks, args.cameras)
     if not units:
         raise SystemExit(
-            f"No mp4s found under {args.data_root / RAW_VIDEO_SUBDIR / distract_dir} "
+            f"No mp4s found under {args.data_root}/human_demos for {args.video_types} "
             f"(tasks={args.tasks}, cameras={args.cameras})."
         )
 
@@ -272,7 +231,7 @@ def main() -> None:
         flush=True,
     )
 
-    iterator: Iterable[tuple[str, str, str, Path]]
+    iterator: Iterable[tuple[str, str, str, str, Path]]
     if args.progress:
         from tqdm import tqdm
         iterator = tqdm(units)
@@ -280,8 +239,8 @@ def main() -> None:
         iterator = units
 
     skipped = wrote = errored = 0
-    for task, demo, cam, mp4 in iterator:
-        out_dir = args.output_root / distract_dir / task / demo
+    for bucket, task, demo, cam, mp4 in iterator:
+        out_dir = args.output_root / bucket / task / demo
         out_npy = out_dir / f"{cam}.npy"
         if out_npy.exists() and not args.overwrite:
             skipped += 1
